@@ -30,7 +30,6 @@ class FeatureExtractor():
         for name, module in self.model._modules.items():
             x = module(x)
             if name in self.target_layers:
-                print('{} in target_layers {}, module = {}'.format(name, self.target_layers, module))
                 x.register_hook(self.save_gradient)
                 outputs += [x]
         return outputs, x
@@ -49,20 +48,8 @@ class ModelOutputs():
 
     def __call__(self, x):
         target_activations, output  = self.feature_extractor(x)
-        print('output.size = ', output.size())
         return target_activations, output
 
-def show_cam_on_image(img, mask_latent):
-    res = np.zeros((28, 28 * (args.latent_size + 1), 3))
-    res[:,:28] = img
-    for i, mask in enumerate(mask_latent):
-        heatmap = cv2.applyColorMap(np.uint8(255*mask), cv2.COLORMAP_JET)
-        heatmap = np.float32(heatmap) / 255
-        cam = heatmap + np.float32(img)
-        cam = cam / np.max(cam)
-        res[:,(i + 1)*28:(i + 2)*28] = cam.copy()
-    cv2.imwrite("results/cam_{}.jpg".format(args.latent_size), np.uint8(255 * res))
-    
 
 class GradCam:
     def __init__(self, model, target_layer_names, use_cuda):
@@ -120,7 +107,7 @@ class GradCam:
             cam = cam - np.min(cam)
             cam = cam / np.max(cam)
             latent_cam[latent_index] = cam.copy()
-        return latent_cam
+        return latent_cam, {'mu': np.squeeze(mu.detach().numpy()), 'logvar': np.squeeze(logvar.detach().numpy())}
 
 
 def get_args():
@@ -133,7 +120,10 @@ def get_args():
                     help='path of model loaded')
     parser.add_argument('--latent-size', type=int, default=20,
                     help='number of latent')
-    parser.add_argument('--model-layer', type=str, default='4')
+    parser.add_argument('--model-layer', type=str, default='4',
+                    help='model layers of object')
+    parser.add_argument('--sorted', type=bool, default=False,
+                    help='sort the latent by sigma or not (default = False)')
     args = parser.parse_args()
     args.use_cuda = args.use_cuda and torch.cuda.is_available()
     if args.use_cuda:
@@ -143,6 +133,28 @@ def get_args():
 
     return args
 
+
+def show_cam_on_image(imgs_list, mask_list, latent_list):
+    res = np.zeros((28 * 10, 28 * (args.latent_size + 1), 3))
+    for label in range(10):
+        img = imgs_list[label]
+        mask_latent = mask_list[label]
+        res[label * 28 : (label + 1)*28, :28] = img
+
+        latent_z = latent_list[label]
+        list_logvar = latent_z['logvar'].tolist()
+        sorted_logvar = sorted(list_logvar) if args.sorted else list_logvar
+        print(sorted_logvar)
+        for i, v in enumerate(sorted_logvar):
+            tmp = list_logvar.index(v)
+            mask = mask_latent[tmp]
+            heatmap = cv2.applyColorMap(np.uint8(255*mask), cv2.COLORMAP_JET)
+            heatmap = np.float32(heatmap) / 255
+            cam = heatmap + np.float32(img)
+            cam = cam / np.max(cam)
+            res[label * 28 : (label + 1)*28, (i + 1)*28 : (i + 2)*28] = cam.copy()
+    cv2.imwrite("results/cam_{}_{}.jpg".format(args.latent_size, args.sorted), np.uint8(255 * res))
+    
 
 args = get_args()
 if __name__ == '__main__':
@@ -167,18 +179,34 @@ if __name__ == '__main__':
     grad_cam = GradCam(model = model, \
                     target_layer_names = [args.model_layer], use_cuda=args.use_cuda)
 
+    
     test_loader = DataLoader(
         datasets.MNIST('data', train=False, download=True, transform=transforms.ToTensor()),
         batch_size=128)
     dataiter = iter(test_loader)
     imgs, labels = dataiter.next()
-    input = torch.unsqueeze(imgs[0], 0)
-    # print('img = {}, image_path = {}', img, args.image_path)
-
-    # If None, returns the map for the highest scoring category.
-    # Otherwise, targets the requested index.
-    target_index = None
-
-    mask = grad_cam(input, target_index)
-    show_img = np.concatenate((imgs[0], imgs[0], imgs[0]), axis=0).transpose((1, 2, 0))
-    show_cam_on_image(show_img, mask)
+    imgs_index = [i for i in range(10)]
+    label_flag = [False for i in range(10)]
+    cnt = 0
+    for i, label in enumerate(labels):
+        if not label_flag[label]:
+            label_flag[label] = True
+            imgs_index[label] = i
+            cnt += 1
+            if cnt == 10:
+                break
+    
+    mask_list = []
+    imgs_list = []
+    latent_list = []
+    for index in imgs_index:
+        show_img = np.concatenate((imgs[index], imgs[index], imgs[index]), axis=0).transpose((1, 2, 0))
+        input = torch.unsqueeze(imgs[index], 0)
+        # If None, returns the map for the highest scoring category.
+        # Otherwise, targets the requested index.
+        target_index = None
+        mask, latent_z = grad_cam(input, target_index)
+        mask_list.append(mask.copy())
+        imgs_list.append(show_img.copy())
+        latent_list.append(latent_z.copy())
+    show_cam_on_image(imgs_list, mask_list, latent_list)

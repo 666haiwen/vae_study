@@ -16,44 +16,36 @@ from torch.utils.data import Dataset, DataLoader
 from torchvision import datasets, transforms
 from torchvision.utils import save_image
 
-os.environ['CUDA_VISIBLE_DEVICES'] = '3'
+os.environ['CUDA_VISIBLE_DEVICES'] = '0'
+def get_args():
+    parser = argparse.ArgumentParser(description='VAE MINST Example')
+    parser.add_argument('--batch-size', type=int, default=128, metavar='N',
+                        help='input batch size of trainning (default = 128)')
+    parser.add_argument('--epochs', type=int, default=50,
+                        help='number of epochs to train (default = 10)')
+    parser.add_argument('--seed', type=int, default=1,
+                        help='random seed (default = 1)')
+    parser.add_argument('--cuda', type=bool, default=False,
+                        help='enables CUDA traning or not (default = False)')
+    parser.add_argument('--num-workers', type=int, default=2,
+                        help='num of workers while training and testing (default = 2)')
+    parser.add_argument('--path', type=str, default='model/mnist_vae_tar_cpu.pth',
+                        help='path to model saving')
+    parser.add_argument('--load-checkpoint', type=bool, default=True,
+                        help='load history model or not (default = True)')
+    parser.add_argument('--lr', type=int, default=1e-3,
+                        help='learning rate of training (default = 1e-3)')
+    parser.add_argument('--log-interval', type=int, default=20,
+                        help='how many batches to wait before logging training status')
+    parser.add_argument('--sample', type=bool, default=False,
+                        help='Test to get sample img or not')
+    parser.add_argument('--latent-size', type=int, default=5,
+                        help='number of latents (default = 5)')
+    args = parser.parse_args()
+    args.path = args.path[:-4] + '_{}.pth'.format(args.latent_size)
+    args.cuda = args.cuda and torch.cuda.is_available()
+    return args
 
-parser = argparse.ArgumentParser(description='VAE MINST Example')
-parser.add_argument('--batch-size', type=int, default=128, metavar='N',
-                    help='input batch size of trainning (default = 128)')
-parser.add_argument('--epochs', type=int, default=10,
-                    help='number of epochs to train (default = 10)')
-parser.add_argument('--seed', type=int, default=1,
-                    help='random seed (default = 1)')
-parser.add_argument('--cuda', type=bool, default=False,
-                    help='enables CUDA traning or not (default = False)')
-parser.add_argument('--num-workers', type=int, default=2,
-                    help='num of workers while training and testing (default = 2)')
-parser.add_argument('--path', type=str, default='model/mnist_vae_tar_cpu.pth',
-                    help='path to model saving')
-parser.add_argument('--load-checkpoint', type=bool, default=True,
-                    help='load history model or not (default = True)')
-parser.add_argument('--lr', type=int, default=1e-3,
-                    help='learning rate of training (default = 1e-3)')
-parser.add_argument('--log-interval', type=int, default=20,
-                    help='how many batches to wait before logging training status')
-parser.add_argument('--sample', type=bool, default=False,
-                    help='Test to get sample img or not')
-parser.add_argument('--latent-size', type=int, default=5,
-                    help='number of latents (default = 5)')
-args = parser.parse_args()
-args.path = args.path[:-4] + '_{}.pth'.format(args.latent_size)
-args.cuda = args.cuda and torch.cuda.is_available()
-kwargs = {'num_workers': 1, 'pin_memory': True} if args.cuda \
-    else {'num_workers': args.num_workers}
-
-torch.manual_seed(args.seed)
-train_loader = DataLoader(
-    datasets.MNIST('data', train=True, download=True, transform=transforms.ToTensor()),
-    batch_size=args.batch_size, shuffle=True, **kwargs)
-test_loader = DataLoader(
-    datasets.MNIST('data', train=False, download=True, transform=transforms.ToTensor()),
-    batch_size=args.batch_size, shuffle=True, **kwargs)
 
 class VAE(nn.Module):
     def __init__(self, latent_size):
@@ -154,7 +146,7 @@ def test(model, test_loader):
                 np.savetxt('results/mu.txt', test_mu, fmt='%.4f')
                 np.savetxt('results/logvar.txt', test_logvar, fmt='%.4f')
                 save_image(comparison.cpu(),
-                         'results/reconstruction_.png', nrow=n)
+                         'results/reconstruction_{}.png'.format(args.latent_size), nrow=n)
         
         print('Test Average loss : {:.4f}'.format(test_loss / len(test_loader.dataset)))
 
@@ -187,4 +179,15 @@ def main():
 
 
 if __name__ == "__main__":
+    args = get_args()
+    kwargs = {'num_workers': 1, 'pin_memory': True} if args.cuda \
+    else {'num_workers': args.num_workers}
+    torch.manual_seed(args.seed)
+    train_loader = DataLoader(
+        datasets.MNIST('data', train=True, download=True, transform=transforms.ToTensor()),
+        batch_size=args.batch_size, shuffle=True, **kwargs)
+    test_loader = DataLoader(
+        datasets.MNIST('data', train=False, download=True, transform=transforms.ToTensor()),
+        batch_size=args.batch_size, shuffle=True, **kwargs)
+
     main()
