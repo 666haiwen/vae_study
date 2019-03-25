@@ -87,7 +87,7 @@ class GradCam:
             one_hot_logvar = Variable(torch.from_numpy(one_hot_logvar), requires_grad = True)
             one_hot_mu = one_hot_mu * mu
             one_hot_logvar = one_hot_logvar * logvar
-            loss = 0.5 * torch.sum(-one_hot_logvar + one_hot_logvar.exp() + one_hot_mu ** 2)
+            loss = -0.5 * torch.sum(-one_hot_logvar + one_hot_logvar.exp() + one_hot_mu ** 2)
             self.model.features.zero_grad()
             self.model.zero_grad()
             loss.backward(retain_graph=True)
@@ -97,15 +97,19 @@ class GradCam:
             target = target.cpu().data.numpy()[0, :]
 
             weights = np.mean(grads_val, axis = (2, 3))[0, :]
+            # print('weights:', weights)
             cam = np.zeros(target.shape[1 : ], dtype = np.float)
 
             for i, w in enumerate(weights):
                 cam += w * target[i, :, :]
 
+            print('max of cam:', np.max(cam))
             cam = np.maximum(cam, 0)
             cam = cv2.resize(cam, SIZE)
             cam = cam - np.min(cam)
-            cam = cam / np.max(cam)
+            print('after max of cam:', np.max(cam))
+            if np.max(cam) > 1e-10:
+                cam = cam / np.max(cam)
             latent_cam[latent_index] = cam.copy()
         return latent_cam, {'mu': np.squeeze(mu.detach().numpy()), 'logvar': np.squeeze(logvar.detach().numpy())}
 
@@ -125,6 +129,7 @@ def get_args():
     parser.add_argument('--sorted', type=bool, default=False,
                     help='sort the latent by sigma or not (default = False)')
     args = parser.parse_args()
+    args.path = args.path[:-4] + '_{}.pth'.format(args.latent_size)
     args.use_cuda = args.use_cuda and torch.cuda.is_available()
     if args.use_cuda:
         print("Using GPU for acceleration")
@@ -144,16 +149,16 @@ def show_cam_on_image(imgs_list, mask_list, latent_list):
         latent_z = latent_list[label]
         list_logvar = latent_z['logvar'].tolist()
         sorted_logvar = sorted(list_logvar) if args.sorted else list_logvar
-        print(sorted_logvar)
         for i, v in enumerate(sorted_logvar):
             tmp = list_logvar.index(v)
             mask = mask_latent[tmp]
-            heatmap = cv2.applyColorMap(np.uint8(255*mask), cv2.COLORMAP_JET)
+            heatmap = cv2.applyColorMap(np.uint8(255*mask), cv2.COLORMAP_HOT)
             heatmap = np.float32(heatmap) / 255
             cam = heatmap + np.float32(img)
             cam = cam / np.max(cam)
-            res[label * 28 : (label + 1)*28, (i + 1)*28 : (i + 2)*28] = cam.copy()
-    cv2.imwrite("results/cam_{}_{}.jpg".format(args.latent_size, args.sorted), np.uint8(255 * res))
+            # res[label * 28 : (label + 1)*28, (i + 1)*28 : (i + 2)*28] = cam.copy()
+            res[label * 28 : (label + 1)*28, (i + 1)*28 : (i + 2)*28] = heatmap.copy()
+    cv2.imwrite("results/cam_heatmap_{}_{}.jpg".format(args.latent_size, args.sorted), np.uint8(255 * res))
     
 
 args = get_args()
