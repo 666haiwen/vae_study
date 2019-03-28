@@ -1,6 +1,5 @@
 import torch
 from torch.autograd import Variable
-from torch.autograd import Function
 from torchvision import utils, datasets, transforms
 from torch.utils.data import Dataset, DataLoader
 import os
@@ -61,9 +60,6 @@ class GradCam:
 
         self.extractor = ModelOutputs(self.model, target_layer_names)
 
-    def forward(self, input):
-        return self.model(input) 
-
     def __call__(self, input, index = None):
         if self.cuda:
             features, output = self.extractor(input.cuda())
@@ -103,11 +99,9 @@ class GradCam:
             for i, w in enumerate(weights):
                 cam += w * target[i, :, :]
 
-            print('max of cam:', np.max(cam))
             cam = np.maximum(cam, 0)
             cam = cv2.resize(cam, SIZE)
             cam = cam - np.min(cam)
-            print('after max of cam:', np.max(cam))
             if np.max(cam) > 1e-10:
                 cam = cam / np.max(cam)
             latent_cam[latent_index] = cam.copy()
@@ -140,11 +134,13 @@ def get_args():
 
 
 def show_cam_on_image(imgs_list, mask_list, latent_list):
-    res = np.zeros((28 * 10, 28 * (args.latent_size + 1), 3))
+    heat_res = np.zeros((28 * 10, 28 * (args.latent_size + 1), 3))
+    cam_res = np.zeros((28 * 10, 28 * (args.latent_size + 1), 3))
     for label in range(10):
         img = imgs_list[label]
         mask_latent = mask_list[label]
-        res[label * 28 : (label + 1)*28, :28] = img
+        heat_res[label * 28 : (label + 1)*28, :28] = img
+        cam_res[label * 28 : (label + 1)*28, :28] = img
 
         latent_z = latent_list[label]
         list_logvar = latent_z['logvar'].tolist()
@@ -156,12 +152,16 @@ def show_cam_on_image(imgs_list, mask_list, latent_list):
             heatmap = np.float32(heatmap) / 255
             cam = heatmap + np.float32(img)
             cam = cam / np.max(cam)
-            # res[label * 28 : (label + 1)*28, (i + 1)*28 : (i + 2)*28] = cam.copy()
-            res[label * 28 : (label + 1)*28, (i + 1)*28 : (i + 2)*28] = heatmap.copy()
-    cv2.imwrite("results/cam_heatmap_{}_{}.jpg".format(args.latent_size, args.sorted), np.uint8(255 * res))
+            heat_res[label * 28 : (label + 1)*28, (i + 1)*28 : (i + 2)*28] = heatmap.copy()
+            cam_res[label * 28 : (label + 1)*28, (i + 1)*28 : (i + 2)*28] = cam.copy()
+    cv2.imwrite("results/cam_heatmap_{}_{}.jpg".format(args.latent_size, args.sorted), np.uint8(255 * heat_res))
+    cv2.imwrite("results/cam_{}_{}.jpg".format(args.latent_size, args.sorted), np.uint8(255 * cam_res))
     
 
-args = get_args()
+def feature_map_msgs():
+    pass
+
+
 if __name__ == '__main__':
     """
         1.load vae model to grad_cam
@@ -169,6 +169,7 @@ if __name__ == '__main__':
         3.generate mu and logsigma, calculate the loss function to get weight param
         4.get the cam-map by weight param
     """
+    args = get_args()
     torch.manual_seed(args.seed)
     model = VAE(args.latent_size)
     path = os.path.join(os.getcwd(), args.path)
