@@ -16,17 +16,17 @@ from torch.utils.data import Dataset, DataLoader
 from torchvision import datasets, transforms
 from torchvision.utils import save_image
 
-os.environ['CUDA_VISIBLE_DEVICES'] = '0'
+os.environ['CUDA_VISIBLE_DEVICES'] = '3'
 def get_args():
     parser = argparse.ArgumentParser(description='VAE MINST Example')
     parser.add_argument('--batch-size', type=int, default=128, metavar='N',
                         help='input batch size of trainning (default = 128)')
-    parser.add_argument('--epochs', type=int, default=50,
-                        help='number of epochs to train (default = 10)')
+    parser.add_argument('--epochs', type=int, default=200,
+                        help='number of epochs to train (default = 200)')
     parser.add_argument('--seed', type=int, default=1,
                         help='random seed (default = 1)')
-    parser.add_argument('--cuda', type=bool, default=False,
-                        help='enables CUDA traning or not (default = False)')
+    parser.add_argument('--cuda', type=bool, default=True,
+                        help='enables CUDA traning or not (default = True)')
     parser.add_argument('--num-workers', type=int, default=2,
                         help='num of workers while training and testing (default = 2)')
     parser.add_argument('--path', type=str, default='model/mnist_vae_tar_cpu.pth',
@@ -54,8 +54,8 @@ class VAE(nn.Module):
         self.conv1 = nn.Conv2d(1, 6, 5)
         self.pool = nn.MaxPool2d(2, 2)
         self.conv2 = nn.Conv2d(6, 10, 3)
-        self.fc2mu = nn.Linear(10 * 5 * 5, latent_size)
-        self.fc2Logvar = nn.Linear(10 * 5 * 5, latent_size)
+        self.fc1mu = nn.Linear(10 * 5 * 5, latent_size)
+        self.fc1Logvar = nn.Linear(10 * 5 * 5, latent_size)
         self.fc3 = nn.Linear(latent_size, 400)
         self.fc4 = nn.Linear(400, 28*28)
         self.features = nn.Sequential(
@@ -70,7 +70,7 @@ class VAE(nn.Module):
     def encode(self, x):
         x = self.features(x)
         x = x.view(-1, 10 * 5 * 5)
-        return self.fc2mu(x), self.fc2Logvar(x)
+        return self.fc1mu(x), self.fc1Logvar(x)
     
     def reparmeterize(self, mu, logvar):
         std = torch.exp(0.5 * logvar)
@@ -184,10 +184,10 @@ if __name__ == "__main__":
     else {'num_workers': args.num_workers}
     torch.manual_seed(args.seed)
     train_loader = DataLoader(
-        datasets.MNIST('data', train=True, download=True, transform=transforms.ToTensor()),
+        datasets.MNIST('data/MNIST', train=True, download=True, transform=transforms.ToTensor()),
         batch_size=args.batch_size, shuffle=True, **kwargs)
     test_loader = DataLoader(
-        datasets.MNIST('data', train=False, download=True, transform=transforms.ToTensor()),
+        datasets.MNIST('data/MNIST', train=False, download=True, transform=transforms.ToTensor()),
         batch_size=args.batch_size, shuffle=True, **kwargs)
 
     main()
